@@ -105,6 +105,11 @@
       margin: 0;
     }
 
+    .status {
+      padding: 0;
+      margin: 0;
+    }
+    
     .bill-item {
       display: flex;
       justify-content: space-between;
@@ -139,12 +144,14 @@
         <p>Click to Upload Product Image</p>
       </label>
       <input type="file" id="fileInput" class="file-input" accept="image/*"/>
-      <button class="checkout-btn" id="uploadBtn">Process & Generate Bill</button>
+      <button class="checkout-btn" id="uploadBtn">Scan</button>
     </div>
     
     <div class="right-panel">
       <h2>Bill Summary</h2>
       <div class="bill-section">
+        <div class="status" id="status">
+        </div>
         <ul class="bill-list" id="billList">
           <li>No products detected yet.</li>
         </ul>
@@ -153,6 +160,9 @@
           <span id="totalPrice">$0.00</span>
           
         </div>
+        <button class="checkout-btn" id="clearBtn">
+            Clear
+        </button>
         <button class="checkout-btn" id="payBtn">
             Proceed to Payment
         </button>
@@ -171,7 +181,11 @@
     const totalPriceEl = document.getElementById("totalPrice");
     const payBtn = document.getElementById("payBtn");
     const downloadBtn = document.getElementById("downloadBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const status = document.getElementById("status");
     let selectedFile;
+
+    let billitems = null;
 
     fileInput.addEventListener("change", () => {
       selectedFile = fileInput.files[0];
@@ -183,7 +197,13 @@
         reader.readAsDataURL(selectedFile);
       }
     });
-
+    
+    clearBtn.addEventListener("click", () => {
+       billitems = null;
+       billList.innerHTML = "<li>No products detected yet.</li>"
+       totalPriceEl.textContent = "$0.00";
+    })
+    
     uploadBtn.addEventListener("click", async () => {
       if (!selectedFile) {
         alert("Please upload an image first.");
@@ -193,7 +213,7 @@
       const formData = new FormData();
       formData.append("image", selectedFile);
 
-      billList.innerHTML = "<li>Processing...</li>";
+      status.innerHTML = "Processing...</li>";
 
       try {
         const response = await fetch("/upload", {
@@ -202,37 +222,60 @@
         });
 
         const data = await response.json();
-
+        
         if (!data.bill || data.bill.length === 0) {
-          billList.innerHTML = "<li>No products detected.</li>";
-          totalPriceEl.textContent = "$0.00";
+          //billList.innerHTML = "<li>No products detected.</li>";
+          //totalPriceEl.textContent = "$0.00";
+          status.innerHTML = "no products detected in scan.";
           return;
         }
-
+        
+        if (billitems === null) {
+           billitems = data;
+           console.log("set billitems = " + data)
+        } else {
+           console.log("foreach item")
+           data.bill.forEach(item => {
+              idx = billitems.bill.findIndex(product => product.Product === item.Product);
+              if(idx != -1) {
+                 billitems.bill[idx].Quantity += item.Quantity;
+              } else {
+                 billitems.bill.push(item);
+                 console.log("push item: " + item)
+              }
+           });
+        }
+        console.log(billitems)
+        
         let itemsHTML = "";
         let totalItems = 0;
-        data.bill.forEach(item => {
+        let item_total_price = 0;
+        let totalPrice = 0;
+        billitems.bill.forEach(item => {
           totalItems += item.Quantity;
+          item_price_total = item.Quantity * item.Unit_Price;
+          item.Total = item_price_total;
+          totalPrice += item_price_total;
           itemsHTML += `
             <li class="bill-item">
               <span>${item.Product} (x ${item.Quantity})</span>
-              <span>$${item.Total.toFixed(2)}</span>
+              <span>$${item_price_total.toFixed(2)}</span>
             </li>`;
         });
 
         itemsHTML += `
         <li class="bill-item total-summary">
           <strong>Total Items: ${totalItems}</strong>
-          <strong>SubTotal: $${data.total_price.toFixed(2)}</strong>
+          <strong>SubTotal: $${totalPrice.toFixed(2)}</strong>
         </li>`;
 
         billList.innerHTML = itemsHTML;
-        totalPriceEl.textContent = `$${data.total_price.toFixed(2)}`;
+        totalPriceEl.textContent = `$${totalPrice.toFixed(2)}`;
         payBtn.style.display = 'block';  // Show payment button
 
         payBtn.onclick = () => {
           // Redirect to a dummy payment page or your actual payment provider
-          window.location.href = `/payment?amount=${data.total_price.toFixed(2)}`;
+          window.location.href = `/payment?amount=${totalPrice.toFixed(2)}`;
         };
 
         downloadBtn.style.display = 'block';
@@ -244,8 +287,8 @@
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
-              bill: data.bill,
-              total_price: data.total_price,
+              bill: billitems.bill,
+              total_price: totalPrice,
               total_items: totalItems
             })
           });
@@ -257,9 +300,11 @@
           a.download = "final_bill.pdf";
           a.click();
         };
+        
+        status.innerHTML = "";
 
       } catch (error) {
-        billList.innerHTML = `<li style="color:red;">Error: ${error.message}</li>`;
+        status.innerHTML = `<div style="color:red;">Error: ${error.message}</div>`;
       }
     });
     
